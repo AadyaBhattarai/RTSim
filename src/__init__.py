@@ -1,27 +1,24 @@
-"""
-Vehicle Platooning Simulation Package
-
-A modular framework for simulating vehicle platooning and car-following
-scenarios using SUMO and Plexe.
-"""
-
-__version__ = "1.0.0"
-__author__ = "Your Name"
+"""Vehicle Platooning and Car Following Simulation Package."""
 
 from .core import SimulationBase, NetworkGenerator, RouteGenerator
-from .platooning import PlatooningSim, PlatoonController
-from .car_following import CarFollowingSim
-from .utils import ConfigLoader, ExcelWriter, CRRModifier, Statistics
+from .platooning import PlatooningSim, run_platooning_simulation
+from .car_following import CarFollowingSim, run_car_following_simulation
+from .utils import CRRModifier, calculate_confidence_interval, append_df_to_excel, sanitize_workbook
 
 __all__ = [
+    # Core (shared)
     "SimulationBase",
     "NetworkGenerator",
     "RouteGenerator",
+    # Platooning
     "PlatooningSim",
-    "PlatoonController",
+    "run_platooning_simulation",
+    # Car Following
     "CarFollowingSim",
-    "ConfigLoader",
-    "ExcelWriter",
+    "run_car_following_simulation",
+    # Utils
     "CRRModifier",
-    "Statistics",
+    "calculate_confidence_interval",
+    "append_df_to_excel",
+    "sanitize_workbook",
 ]
