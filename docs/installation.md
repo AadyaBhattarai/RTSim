@@ -1,62 +1,100 @@
-# Simulation Parameters
+# Installation Guide
 
-## Important Note
+## Prerequisites
 
-**All parameters below are examples and can be customized by the user.** The only fixed values are the road types which correspond to specific rolling resistance coefficients (CRR).
+- **Conda** (Anaconda or Miniconda)
+- **Python 3.8+**
 
-## Customizable Parameters
+## Step 1: Create Conda Environment
 
-| Parameter | Example Values | Description |
-|-----------|----------------|-------------|
-| `models` | Model1, Model2, etc. | User-defined names matching PHEMlight emission files and route templates |
-| `truck_counts` | 1, 2, 3 | Number of trucks (platoon size) |
-| `sigma_tau_pairs` | (0.5, 1.0), (0.0, 0.8), etc. | Driver imperfection (sigma) and reaction time (tau) pairs |
-| `accel_values` | 0.2, 0.6, 1.0 | Maximum acceleration (m/s²) |
-| `speeds_km_h` | 30, 60, 90, 100 | Target speed (km/h) |
-| `min_gap_values` | 5, 10, 15, 20 | Minimum gap between vehicles (m) |
-| `slope_values` | 0.0, 0.04, 0.08, etc. | Road grade (modified in OpenDRIVE file) |
-| `trials` | 10, 30, etc. | Number of simulation runs per scenario |
-
-## What is a "Model"?
-
-A "Model" is simply a vehicle type whose features are defined in:
-1. A **PHEMlight emission file** - defines vehicle emissions characteristics
-2. A **route file template** - defines vehicle type with length, width, weight, etc.
-
-You can create your own models by:
-1. Creating/modifying PHEMlight `.veh` files for your vehicle type
-2. Creating route file templates with appropriate `<vType>` definitions
-3. Organizing them in the expected folder structure
-
-## Fixed Parameters: Road Types and CRR
-
-The only fixed values are rolling resistance coefficients tied to road surface types:
-
-| Road Type | CRR Value | Description |
-|-----------|-----------|-------------|
-| `primary` | 0.006923 (default) | Smooth asphalt highway |
-| `secondary` | 0.010 | Standard paved road |
-| `cross_country` | 0.025 | Unpaved/rough surface |
-
-These CRR values are written to the PHEMlight `.veh` files before simulation.
-
-## Configuring Your Own Experiment
-
-To run with your own parameters, modify the values in the script:
-
-```python
-# Example: Custom parameters
-models = ["MyTruck", "MyTrailer"]  # Your model folder names
-truck_counts = [1, 2, 4]           # Your platoon sizes
-speeds_km_h = [50, 70, 110]        # Your test speeds
-slope_values = [0.0, 0.05, 0.10]   # Your test slopes
+```bash
+conda create -n sumo_env python=3.10
+conda activate sumo_env
 ```
 
-## Output Metrics
+## Step 2: Install SUMO via Conda
 
-| Metric | Unit | Description |
-|--------|------|-------------|
-| `Fuel_L_per_100km` | L/100km | Fuel consumption per vehicle |
-| `Distance_km` | km | Distance traveled |
-| `Mean` | L/100km | Average fuel consumption across trials |
-| `CI_Lower` / `CI_Upper` | L/100km | 95% confidence interval bounds |
+```bash
+conda install -c conda-forge sumo
+```
+
+Verify installation:
+```bash
+sumo --version
+```
+
+Set the SUMO_HOME environment variable:
+```bash
+# Find where conda installed SUMO
+export SUMO_HOME="$CONDA_PREFIX/share/sumo"
+
+# Add to your shell config (optional, for persistence)
+echo 'export SUMO_HOME="$CONDA_PREFIX/share/sumo"' >> ~/.bashrc
+```
+
+## Step 3: Install Plexe (for platooning only)
+
+```bash
+git clone https://github.com/michele-segata/plexe-pyapi.git
+cd plexe-pyapi
+pip install .
+cd ..
+```
+
+## Step 4: Install This Package
+
+```bash
+git clone https://github.com/yourusername/vehicle-platooning-simulation.git
+cd vehicle-platooning-simulation
+pip install -r requirements.txt
+```
+
+## Step 5: Verify Installation
+
+```bash
+python -c "from src import SimulationBase, NetworkGenerator, RouteGenerator"
+python -c "from src import run_platooning_simulation, run_car_following_simulation"
+python -c "import traci; print('TraCI OK')"
+```
+
+## Complete Setup Script
+
+```bash
+# Create and activate environment
+conda create -n sumo_env python=3.10 -y
+conda activate sumo_env
+
+# Install SUMO
+conda install -c conda-forge sumo -y
+
+# Set SUMO_HOME
+export SUMO_HOME="$CONDA_PREFIX/share/sumo"
+
+# Install Plexe
+git clone https://github.com/michele-segata/plexe-pyapi.git
+cd plexe-pyapi && pip install . && cd ..
+
+# Install this package
+git clone https://github.com/yourusername/vehicle-platooning-simulation.git
+cd vehicle-platooning-simulation
+pip install -r requirements.txt
+```
+
+## Troubleshooting
+
+### "traci module not found"
+Ensure SUMO_HOME is set correctly:
+```bash
+export SUMO_HOME="$CONDA_PREFIX/share/sumo"
+export PYTHONPATH="$SUMO_HOME/tools:$PYTHONPATH"
+```
+
+### "utils module not found"
+The `utils.py` file must be in your Python path - this is a custom Plexe wrapper.
+
+### SUMO not found after restarting terminal
+Add to your `~/.bashrc`:
+```bash
+conda activate sumo_env
+export SUMO_HOME="$CONDA_PREFIX/share/sumo"
+```
