@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- Example route file for car following simulation -->
+<!-- Location: carfollowing/Model1/1truck/lower/grade2.rou.xml -->
+<!-- Note: Car following uses "Single" in PHEMlight path (no platoon drag reduction) -->
+
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    
+    <!-- Vehicle Type - uses "Single" folder in PHEMlight (not reduced drag) -->
+    <vType id="DAC_army" 
+           length="6.739" 
+           minGap="0" 
+           maxSpeed="20.00" 
+           vClass="custom2" 
+           emissionClass="PHEMlight/Model1/Single/90/Lower/RT_II_D_EU0" 
+           guiShape="truck" 
+           width="2.438" 
+           height="2.43" 
+           color="cyan" 
+           accel="1.0" 
+           sigma="0.6" 
+           tau="1.0"/>
+    
+    <!-- Vehicles -->
+    <trip id="t_0" type="DAC_army" depart="0.00" fromJunction="1.begin" toJunction="1.end" departSpeed="20"/>
+    <trip id="t_1" type="DAC_army" depart="0.00" fromJunction="1.begin" toJunction="1.end" departSpeed="20"/>
+
+</routes>
