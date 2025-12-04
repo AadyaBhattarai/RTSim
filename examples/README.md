@@ -1,99 +1,176 @@
-# Example Folder Structure
+# Examples
 
-This folder contains example files showing the required folder structure for platooning simulations.
+This folder contains example files and scripts for running simulations.
 
-## Folder Structure Overview
+## Example Scripts
+
+```bash
+# Platooning simulation
+python examples/example_platooning.py
+
+# Car following simulation
+python examples/example_car_following.py
+```
+
+---
+
+## Folder Structure: PLATOONING vs CAR FOLLOWING
+
+### Platooning Route Templates
 
 ```
-simulation/                          ← Route templates base directory
-├── Model1/                          ← Vehicle model (user-defined name)
-│   ├── 1truck/                      ← Single truck (no gap subfolder)
-│   │   └── 90/                      ← Speed (km/h)
-│   │       ├── lower/               ← Lower drag value
-│   │       │   └── grade01.rou.xml  ← Route file
-│   │       └── upper/               ← Upper drag value
-│   │           └── grade01.rou.xml
+simulation/                              ← Platooning route templates
+├── Model1/
+│   ├── 1truck/
+│   │   └── 90/                          ← Speed
+│   │       ├── lower/
+│   │       │   └── grade01.rou.xml      ← Route file
+│   │       └── upper/
 │   │
-│   ├── 2truck/                      ← 2-truck platoon
-│   │   └── 90/                      ← Speed (km/h)
-│   │       ├── 5/                   ← Gap = 5 meters
+│   ├── 2truck/
+│   │   └── 90/                          ← Speed
+│   │       ├── 5/                       ← Gap (meters)
 │   │       │   ├── lower/
 │   │       │   │   └── grade01.rou.xml
 │   │       │   └── upper/
-│   │       │       └── grade01.rou.xml
-│   │       ├── 10/                  ← Gap = 10 meters
-│   │       ├── 15/                  ← Gap = 15 meters
-│   │       └── 20/                  ← Gap = 20 meters
+│   │       ├── 10/
+│   │       ├── 15/
+│   │       └── 20/
 │   │
-│   └── 3truck/                      ← 3-truck platoon (same structure as 2truck)
-│
-├── Model2/
-├── Model3/
-├── Model4/
-└── Model5/
-
-
-PHEMlight/                           ← Emissions data directory
-├── Model1/
-│   └── 2truck/
-│       └── 5/
-│           └── 90/
-│               ├── Lower/           ← Lower drag coefficient files
-│               │   ├── RT_II_D_EU0.veh
-│               │   └── RT_II_D_EU1.veh
-│               └── Upper/           ← Upper drag coefficient files
-│                   ├── RT_II_D_EU0.veh
-│                   └── RT_II_D_EU1.veh
+│   └── 3truck/
+│       └── ...
 ```
 
-## Why Lower and Upper?
+### Car Following Route Templates
 
-Since exact drag coefficient values are not always known, we run simulations with:
-- **Lower**: Lower bound estimate of drag coefficient
-- **Upper**: Upper bound estimate of drag coefficient
+```
+carfollowing/                            ← Car following route templates
+├── Model1/
+│   ├── 1truck/
+│   │   ├── lower/
+│   │   │   └── grade2.rou.xml           ← Route file (different name!)
+│   │   └── upper/
+│   │
+│   └── 2truck/
+│       ├── lower/
+│       │   └── grade2.rou.xml
+│       └── upper/
+```
 
-This gives a range of fuel consumption results.
+**Key Differences:**
+| Aspect | Platooning | Car Following |
+|--------|------------|---------------|
+| Route file name | `grade01.rou.xml` | `grade2.rou.xml` |
+| Has speed subfolder | Yes (`/90/`) | No |
+| Has gap subfolder | Yes for 2+ trucks (`/5/`) | No |
+
+---
+
+## PHEMlight Folder Structure
+
+```
+PHEMlight/
+├── Model1/
+│   ├── 2truck/                          ← PLATOONING (reduced drag)
+│   │   └── 5/
+│   │       └── 90/
+│   │           ├── Lower/
+│   │           │   └── RT_II_D_EU0.veh
+│   │           └── Upper/
+│   │
+│   └── Single/                          ← CAR FOLLOWING (normal drag)
+│       └── 90/
+│           ├── Lower/
+│           │   └── RT_II_D_EU0.veh
+│           └── Upper/
+```
+
+---
+
+## Why Different Drag Coefficients?
+
+### Platooning (2truck, 3truck, etc.)
+- Vehicles travel close together in a platoon
+- Following vehicles benefit from **reduced air drag** (slipstreaming effect)
+- Lower CdA (drag coefficient) in PHEMlight files
+- Example: `CdA = 0.45` (reduced)
+
+### Car Following (Single)
+- Vehicles operate independently
+- **No drag reduction** benefit
+- Normal CdA in PHEMlight files
+- Example: `CdA = 0.65` (normal)
+
+---
 
 ## Route File → PHEMlight Connection
 
-In the route file, each `<vType>` has an `emissionClass` attribute that points to the PHEMlight folder:
-
+### Platooning Route File
 ```xml
 <vType id="vtypeauto1" 
-       length="6.534"
-       ...
        emissionClass="PHEMlight/Model1/2truck/5/90/Lower/RT_II_D_EU0"/>
 ```
+Points to: `PHEMlight/Model1/2truck/5/90/Lower/RT_II_D_EU0.veh`
 
-This tells SUMO to use the emission data from:
+### Car Following Route File
+```xml
+<vType id="DAC_army" 
+       emissionClass="PHEMlight/Model1/Single/90/Lower/RT_II_D_EU0"/>
 ```
-PHEMlight/Model1/2truck/5/90/Lower/RT_II_D_EU0.veh
+Points to: `PHEMlight/Model1/Single/90/Lower/RT_II_D_EU0.veh`
+
+---
+
+## Why Lower and Upper?
+
+Since exact drag values are unknown, simulations run with both:
+- **Lower**: Lower bound drag estimate → lower fuel consumption
+- **Upper**: Upper bound drag estimate → higher fuel consumption
+
+This gives a range of results.
+
+---
+
+## Example Code Usage
+
+### Platooning
+
+```python
+from core import SimulationBase, NetworkGenerator, RouteGenerator
+from platooning import run_platooning_simulation
+from utils import CRRModifier
+
+# Generate networks
+net_gen = NetworkGenerator("output/networks")
+networks = net_gen.generate_networks("experiment.xodr", "network", [0.0, 0.04])
+
+# Generate routes (uses simulation/ folder structure)
+route_gen = RouteGenerator("simulation/", "output/routes")
+routes = route_gen.generate_platooning_routes(...)
+
+# Modify CRR (.veh suffix for platooning)
+crr_modifier = CRRModifier("PHEMlight/", ".veh")
+crr_modifier.modify_crr_for_routes(routes, "primary", crr_values)
+
+# Run
+results = run_platooning_simulation(cfg, route, speed=90)
 ```
 
-## PHEMlight .veh File
+### Car Following
 
-The `.veh` file contains vehicle parameters including:
-- Vehicle mass
-- Cross section area
-- Air drag coefficient (CdA)
-- Rolling resistance coefficient (Fr0) ← **This is modified for different road types**
+```python
+from core import SimulationBase, NetworkGenerator, RouteGenerator
+from car_following import run_car_following_simulation
+from utils import CRRModifier
 
-Example `.veh` file:
+# Generate routes (uses carfollowing/ folder structure)
+route_gen = RouteGenerator("carfollowing/", "output/routes")
+routes = route_gen.generate_car_following_routes(...)
+
+# Modify CRR (.PHEMLight.veh suffix for car following)
+crr_modifier = CRRModifier("PHEMlight/", ".PHEMLight.veh")
+crr_modifier.modify_crr_for_routes(routes, "cross_country", crr_values)
+
+# Run (seed for randomization, no Plexe needed)
+results = run_car_following_simulation(cfg, route, seed=42)
 ```
-c Rolling resistance coefficient [-]
-c Fr0
-0.006923
-```
-
-The simulation code modifies `Fr0` (CRR) based on road type:
-- primary: 0.006923 (default)
-- secondary: 0.010
-- cross_country: 0.025
-
-## Key Points
-
-1. **Model** = folder name that matches between simulation/ and PHEMlight/
-2. **1truck** has no gap subfolder (single vehicle)
-3. **2truck, 3truck** have gap subfolders (5, 10, 15, 20 meters)
-4. **lower/upper** separate drag coefficient variants
-5. **emissionClass** in route file must match PHEMlight folder path
