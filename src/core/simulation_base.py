@@ -1,9 +1,13 @@
 """
-Base class for vehicle simulations with common functionality.
+Abstract base class for vehicle simulations.
+
+Works for both platooning and car following simulations.
+Provides common functionality: fuel tracking, result collection, config generation.
 """
 
 import os
 import re
+import secrets
 import traci
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Any
@@ -13,42 +17,37 @@ class SimulationBase(ABC):
     """
     Abstract base class for vehicle simulations.
     
-    Provides common functionality for SUMO-based simulations including
-    fuel consumption tracking, distance calculation, and result collection.
+    Subclasses: PlatooningSim, CarFollowingSim
     """
     
     def __init__(self, config: Dict[str, Any] = None):
         """
-        Initialize the simulation base.
-        
         Args:
             config: Configuration dictionary containing simulation parameters
         """
         self.config = config or {}
         self.cumulative_fuel_consumption: Dict[str, float] = {}
         self.cumulative_distance: Dict[str, float] = {}
-        self.results: List[Dict[str, Any]] = []
         self.step = 0
         
     @abstractmethod
-    def setup_vehicles(self) -> Dict[str, Dict[str, str]]:
-        """
-        Set up vehicles for the simulation.
-        
-        Returns:
-            Dictionary representing the vehicle topology
-        """
+    def setup_vehicles(self) -> None:
+        """Set up vehicles for the simulation. Implemented by subclasses."""
         pass
     
     @abstractmethod
     def run_step(self) -> None:
-        """Execute one simulation step."""
+        """Execute one simulation step. Implemented by subclasses."""
         pass
+    
+    def reset(self) -> None:
+        """Reset simulation state for a new run."""
+        self.cumulative_fuel_consumption = {}
+        self.cumulative_distance = {}
+        self.step = 0
         
     def track_fuel_consumption(self) -> None:
-        """
-        Track fuel consumption and distance for all vehicles in simulation.
-        """
+        """Track fuel consumption and distance for all vehicles."""
         vehicle_ids = traci.vehicle.getIDList()
         delta_t = traci.simulation.getDeltaT()
         
@@ -57,7 +56,6 @@ class SimulationBase(ABC):
                 self.cumulative_fuel_consumption[veh_id] = 0.0
                 self.cumulative_distance[veh_id] = 0.0
                 
-            # Get fuel consumption in mg/s and convert to accumulated value
             fuel = traci.vehicle.getFuelConsumption(veh_id) * delta_t
             distance_km = traci.vehicle.getDistance(veh_id) / 1000.0
             
@@ -69,17 +67,13 @@ class SimulationBase(ABC):
         """
         Calculate fuel efficiency in L/100km for a vehicle.
         
-        Args:
-            veh_id: Vehicle identifier
-            
         Returns:
             Fuel consumption in L/100km or None if distance is zero
         """
         km = self.cumulative_distance.get(veh_id, 0.0)
         if km <= 0:
             return None
-            
-        # Convert mg to liters (diesel density 850 g/L = 850000 mg/L)
+        # Diesel density: 850 g/L = 850000 mg/L
         fuel_liters = self.cumulative_fuel_consumption[veh_id] / 850000.0
         return (fuel_liters / km) * 100
     
@@ -88,7 +82,7 @@ class SimulationBase(ABC):
         Collect simulation results for all vehicles.
         
         Args:
-            scenario: Name of the simulation scenario
+            scenario: Name of the simulation scenario ('platooning' or 'car_following')
             metadata: Additional metadata to include in results
             
         Returns:
@@ -111,48 +105,8 @@ class SimulationBase(ABC):
             
         return results
     
-    def reset(self) -> None:
-        """Reset simulation state for a new run."""
-        self.cumulative_fuel_consumption = {}
-        self.cumulative_distance = {}
-        self.results = []
-        self.step = 0
-        
     @staticmethod
-    def parse_route_filename(route_file: str) -> Optional[Dict[str, Any]]:
-        """
-        Parse parameters from a route filename.
-        
-        Args:
-            route_file: Path to route file
-            
-        Returns:
-            Dictionary of parsed parameters or None if parsing fails
-        """
-        pattern = re.compile(
-            r'^route_(\w+)_(\d+)truck_(lower|upper)_minGap_([\d\.]+)_tau_([\d\.]+)'
-            r'_accel_([\d\.]+)_length_([\d\.]+)_sigma_([\d\.]+)\.rou\.xml$'
-        )
-        
-        match = pattern.match(os.path.basename(route_file))
-        if not match:
-            return None
-            
-        model, n_str, variant, minGap_str, tau_str, accel_str, length_str, sigma_str = match.groups()
-        
-        return {
-            'model': model,
-            'truck_count': int(n_str),
-            'variant': variant,
-            'minGap': float(minGap_str),
-            'tau': float(tau_str),
-            'accel': float(accel_str),
-            'length': float(length_str),
-            'sigma': float(sigma_str),
-        }
-    
-    @staticmethod
-    def generate_config(cfg_file: str, route_file: str, net_file: str) -> str:
+    def generate_config(cfg_file: str, route_file: str, net_file: str, unique: bool = True) -> str:
         """
         Generate a temporary SUMO configuration file.
         
@@ -160,6 +114,7 @@ class SimulationBase(ABC):
             cfg_file: Base configuration file path
             route_file: Route file path
             net_file: Network file path
+            unique: If True, generate unique filename for parallel execution
             
         Returns:
             Path to the generated configuration file
@@ -171,18 +126,24 @@ class SimulationBase(ABC):
         net_file = net_file.replace('\\', '/')
         
         cfg_content = re.sub(
-            r'<route-files value="[^"]+"',
+            r'<route-files\s+value="[^"]+"',
             f'<route-files value="{route_file}"',
             cfg_content
         )
         cfg_content = re.sub(
-            r'<net-file value="[^"]+"',
+            r'<net-file\s+value="[^"]+"',
             f'<net-file value="{net_file}"',
             cfg_content
         )
         
-        temp_cfg = "temp.sumocfg"
-        with open(temp_cfg, 'w') as f:
+        if unique:
+            temp_cfg = f"sumo_{secrets.token_hex(8)}.sumocfg"
+        else:
+            temp_cfg = "temp.sumocfg"
+            
+        with open(temp_cfg, 'w', encoding='utf-8') as f:
             f.write(cfg_content)
+            f.flush()
+            os.fsync(f.fileno())
             
         return temp_cfg
