@@ -1,12 +1,12 @@
 """
-Base simulation class providing common functionality for all simulation types.
+Base class for vehicle simulations with common functionality.
 """
 
 import os
 import re
 import traci
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any
 
 
 class SimulationBase(ABC):
@@ -17,14 +17,14 @@ class SimulationBase(ABC):
     fuel consumption tracking, distance calculation, and result collection.
     """
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any] = None):
         """
         Initialize the simulation base.
         
         Args:
             config: Configuration dictionary containing simulation parameters
         """
-        self.config = config
+        self.config = config or {}
         self.cumulative_fuel_consumption: Dict[str, float] = {}
         self.cumulative_distance: Dict[str, float] = {}
         self.results: List[Dict[str, Any]] = []
@@ -44,22 +44,6 @@ class SimulationBase(ABC):
     def run_step(self) -> None:
         """Execute one simulation step."""
         pass
-    
-    def start_sumo(self, cfg_file: str, gui: bool = False) -> None:
-        """
-        Start the SUMO simulation.
-        
-        Args:
-            cfg_file: Path to SUMO configuration file
-            gui: Whether to use GUI mode
-        """
-        sumo_binary = "sumo-gui" if gui else "sumo"
-        sumo_cmd = [sumo_binary, "-c", cfg_file, "--start"]
-        traci.start(sumo_cmd)
-        
-    def close_sumo(self) -> None:
-        """Close the SUMO simulation."""
-        traci.close()
         
     def track_fuel_consumption(self) -> None:
         """
@@ -95,7 +79,7 @@ class SimulationBase(ABC):
         if km <= 0:
             return None
             
-        # Convert mg to liters (assuming diesel density of 850 g/L = 850000 mg/L)
+        # Convert mg to liters (diesel density 850 g/L = 850000 mg/L)
         fuel_liters = self.cumulative_fuel_consumption[veh_id] / 850000.0
         return (fuel_liters / km) * 100
     
@@ -183,11 +167,9 @@ class SimulationBase(ABC):
         with open(cfg_file, 'r') as f:
             cfg_content = f.read()
             
-        # Normalize path separators
         route_file = route_file.replace('\\', '/')
         net_file = net_file.replace('\\', '/')
         
-        # Update route and network file references
         cfg_content = re.sub(
             r'<route-files value="[^"]+"',
             f'<route-files value="{route_file}"',
