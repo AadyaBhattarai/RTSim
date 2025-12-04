@@ -36,10 +36,12 @@ def main():
     # Your base SUMO config file
     sumo_cfg = "grade0.sumocfg"
     
-    # Your route templates folder (contains Model1/2truck/90/5/lower/grade01.rou.xml)
+    # Your route templates folder
+    # Structure: simulation/Model1/2truck/90/5/lower/grade01.rou.xml
     route_base_dir = "examples/simulation"
     
     # Your PHEMlight emissions folder
+    # Platooning uses: PHEMlight/Model1/2truck/5/90/Lower/
     phem_dir = "examples/PHEMlight"
     
     # Output directory
