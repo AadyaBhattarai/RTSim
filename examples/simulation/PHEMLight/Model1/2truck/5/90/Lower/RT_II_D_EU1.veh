@@ -1,1 +1,136 @@
-
+c PHEMLight Vehicle Input filefc (based on PHEM .veh file format)
+c PHEM 11.7.6
+c 09.03.2016 07:25:01
+c Vehicle mass [kg]
+9507.0
+c Vehicle loading [kg]
+10000.0
+c Cd value [-]
+0.536535
+c Cross sectional area [m^2]
+5.92
+c Delta [-] (not supported since Version 10.7)
+0
+c Engine rotational inertia [kg*m^2]
+3.607198
+c Wheels equivalent rotational inertia [kg] (= I_wheel/rdyn^2)
+560.1
+c Gearbox rotational inertia [kg*m^2]
+0.301
+c Auxiliaries base power demand (normalized) [-]
+0.015
+c Engine rated power [kW]
+205
+c Engine rated speed [rpm]
+2025
+c Engine idling speed [rpm]
+576
+c ---
+0
+c Rolling resistance coefficients
+c Fr0
+0.006923
+c Fr1
+0
+c Fr2
+0
+c Fr3
+0
+c Fr4
+0
+c ---
+0
+c Transmission loss factor
+0.974169
+c Transmission
+c Axle ratio [-]
+3.62,1
+c Wheel effective diameter [m]
+1.064
+c Transmission gears: Ratio [-], path to efficiency map filefc (optional)
+c Gear 1
+13.51,13.51
+c Gear 2
+10.07,10.07
+c Gear 3
+7.55,7.55
+c Gear 4
+5.66,5.66
+c Gear 5
+4.24,4.24
+c Gear 6
+3.19,3.19
+c Gear 7
+2.38,2.38
+c Gear 8
+1.78,1.78
+c Gear 9
+1.34,1.34
+c Gear 10
+1,1
+c Gear 11
+0,
+c Gear 12
+0,
+c Gear 13
+0,
+c Gear 14
+0,
+c Gear 15
+0,
+c Gear 16
+0,
+c Gear shift behaviour:
+c Gearshift model (Version fast driver)
+c shift up at ratio rpm/rated rpm in actual gear greater than
+0.8068
+c shift down when rpm/rated rpm in lower gear is higher than
+0.6493778
+c Gearshift model (Version economic driver)
+c shift up at ratio rpm/rated rpm in higher gear greater than
+0.5527778
+c Shift down when ratio rpm/rated rpm in actual gear is lower than
+0.5186263
+c Share of version economic driver (0 to 1)
+0
+c Share of version mixed model (0 to 1)
+1
+cVehiclemasstypeforPHEMlight
+HV
+cFueltypeforPHEMlight
+D
+c P_n_max_v0
+5
+c P_n_max_p0
+0.6
+c P_n_max_v1
+20
+c P_n_max_p1
+0.85
+c vehicle speed [km/h] (converted to m/s after read-in), gear ratio [-], rotational mass factor [-]
+0,13.51,2.96
+3.662478,13.51,2.96
+8.175371,10.07,1.61
+11.80895,7.55,1.35
+16.52908,5.66,1.19
+19.82024,4.24,1.11
+25.72013,3.19,1.06
+34.65263,2.38,1.03
+46.93462,1.78,1.02
+63.78298,1.34,1.01
+84.36148,1,1.01
+250,1,1.01
+c n_norm, pe_drag _norm
+0,-0.025
+0.1,-0.03
+0.2,-0.036
+0.3,-0.043
+0.4,-0.052
+0.5,-0.062
+0.6,-0.074
+0.7,-0.088
+0.8,-0.106
+0.9,-0.123
+1,-0.142
+1.1,-0.165
+1.2,-0.19
