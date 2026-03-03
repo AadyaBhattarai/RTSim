@@ -1,4 +1,4 @@
-# Vehicle Platooning and Car Following Simulation Framework
+# RTSim: A comprehensive road trip simulator
 
 A comprehensive framework for simulating vehicle platooning and car-following behavior using SUMO (Simulation of Urban MObility) with PHEMLight emission models and Plexe for cooperative adaptive cruise control.
 
