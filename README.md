@@ -345,11 +345,13 @@ pip install git+https://github.com/michele-segata/plexe-pyapi.git
 If you use this framework in your research, please cite:
 
 ```bibtex
-@software{vehicle_platooning_sim,
-  author = {Your Name},
-  title = {Vehicle Platooning and Car Following Simulation Framework},
-  year = {2024},
-  url = {https://github.com/yourusername/vehicle-platooning-simulation}
+@article{bhattarai2025rtsim,
+  author  = {Bhattarai, Aadya and Charkhgard, Hadi and Shah, Ankit and Pohland, Timothy and Das, Tapas K.},
+  title   = {Developing a Road-Trip Simulator (RTSim) and a Fuel Consumption Prediction Model for Internal Combustion Engine Vehicles (ICEVs) with Automation},
+  journal = {SSRN Electronic Journal},
+  year    = {2025},
+  doi     = {10.2139/ssrn.6353058},
+  url     = {https://doi.org/10.2139/ssrn.6353058}
 }
 ```
 
