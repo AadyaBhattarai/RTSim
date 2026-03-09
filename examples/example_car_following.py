@@ -1,173 +1,108 @@
 #!/usr/bin/env python3
 """
-Example: Running a Car Following Simulation
+Minimal Car-Following Example
 
-This example shows how to use the modules to run a car following simulation.
-Car following does NOT use Plexe - it uses SUMO's built-in car following model.
+Demonstrates how to run a single car-following scenario with RTSim.
+Car-following does NOT use Plexe — it relies on SUMO's built-in
+Krauss model with sigma and tau parameters for automation levels.
 
 Prerequisites:
-- SUMO installed and SUMO_HOME set
+    - SUMO installed and SUMO_HOME set
+    - PHEMlight emission files in place
+    - Route template files in the expected folder structure
+
+Usage:
+    python examples/example_car_following.py
 """
 
 import os
 import sys
 
-# Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+# Add project root to path so we can import from src/
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-# Import our modules
-from core import SimulationBase, NetworkGenerator, RouteGenerator
-from car_following import run_car_following_simulation
-from utils import CRRModifier, append_df_to_excel, sanitize_workbook
-
-import pandas as pd
+from src.core import SimulationBase, NetworkGenerator, RouteGenerator
+from src.car_following import run_car_following_simulation
+from src.utils import CRRModifier
 
 
 def main():
-    # =========================================================================
-    # CONFIGURATION - Modify these paths to match your setup
-    # =========================================================================
-    
-    # Your OpenDRIVE file
-    xodr_file = "experiment_e.xodr"
-    
-    # Your base SUMO config file
-    sumo_cfg = "grade0.sumocfg"
-    
-    # Your car following route templates folder
-    # Structure: carfollowing/Model1/1truck/lower/grade2.rou.xml
-    route_base_dir = "examples/carfollowing"
-    
-    # Your emissions folder
-    # Car following uses "Single" subfolder: PHEMlight/Model1/Single/90/Lower/
-    phem_dir = "examples/PHEMlight"
-    
-    # Output directory
-    output_dir = "car_following_results"
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # =========================================================================
-    # PARAMETERS
-    # =========================================================================
-    
-    models = ["Model4", "Model5"]
-    truck_counts = [1]                         # Single truck for car following
-    sigma_tau_pairs = [(0.5, 1.0), (0.0, 0.8)]
-    accel_values = [0.2, 0.6]
-    speeds_km_h = [60, 90]
-    min_gaps = [5, 10]
-    slope_values = [0.0, 0.08]
-    road_type = "cross_country"
-    trials = 5
-    
-    crr_values = {
-        'primary': 0.006923,
-        'secondary': 0.010,
-        'cross_country': 0.025
-    }
-    
-    # =========================================================================
-    # STEP 1: Generate Networks
-    # =========================================================================
-    
-    print("=" * 60)
-    print("STEP 1: Generating networks")
-    print("=" * 60)
-    
-    net_gen = NetworkGenerator(os.path.join(output_dir, "networks"))
-    networks = net_gen.generate_networks(xodr_file, "network", slope_values)
-    
-    # =========================================================================
-    # STEP 2: Generate Route Files
-    # =========================================================================
-    
-    print("\n" + "=" * 60)
-    print("STEP 2: Generating route files")
-    print("=" * 60)
-    
-    route_gen = RouteGenerator(route_base_dir, os.path.join(output_dir, "routes"))
-    route_files = route_gen.generate_car_following_routes(
-        models=models,
-        truck_counts=truck_counts,
-        sigma_tau_pairs=sigma_tau_pairs,
-        accels=accel_values,
-        speeds=speeds_km_h,
-        min_gaps=min_gaps
+    # === PATHS — Update these to match your setup ===
+    xodr_file = "data/opendrive/experiment_e.xodr"
+    sumo_cfg = "data/sumo/configs/grade0.sumocfg"
+    route_base_dir = "data/sumo/routes/car_following"
+    phem_dir = os.path.join(
+        os.environ.get("SUMO_HOME", "/usr/share/sumo"), "data/emissions"
     )
-    
-    print(f"  Generated {len(route_files)} route files")
-    
-    # =========================================================================
-    # STEP 3: Modify CRR (using .PHEMLight.veh suffix for car following)
-    # =========================================================================
-    
-    print("\n" + "=" * 60)
-    print("STEP 3: Modifying CRR values")
-    print("=" * 60)
-    
-    crr_modifier = CRRModifier(phem_dir, ".PHEMLight.veh")
-    crr_modifier.modify_crr_for_routes(route_files, road_type, crr_values)
-    
-    # =========================================================================
-    # STEP 4: Run Simulations
-    # =========================================================================
-    
-    print("\n" + "=" * 60)
-    print("STEP 4: Running simulations")
-    print("=" * 60)
-    
-    all_results = []
-    
-    for slope, net_path in networks:
-        for route_file in route_files:
-            for trial in range(1, trials + 1):
-                print(f"\n  Running: slope={slope}, trial={trial}")
-                print(f"    Route: {os.path.basename(route_file)}")
-                
-                try:
-                    # Generate config
-                    cfg_path = SimulationBase.generate_config(
-                        sumo_cfg, route_file, net_path, unique=True
-                    )
-                    
-                    # Run simulation (trial is used as seed for randomization)
-                    results = run_car_following_simulation(cfg_path, route_file, seed=trial)
-                    
-                    # Add metadata
-                    for r in results:
-                        r['Slope'] = slope
-                        r['RoadType'] = road_type
-                        r['Trial'] = trial
-                    
-                    all_results.extend(results)
-                    
-                    # Print results
-                    for r in results:
-                        print(f"    Vehicle {r['Vehicle']}: {r['Fuel_L_per_100km']:.2f} L/100km")
-                    
-                    # Cleanup
-                    if os.path.exists(cfg_path):
-                        os.remove(cfg_path)
-                        
-                except Exception as e:
-                    print(f"    ERROR: {e}")
-    
-    # =========================================================================
-    # STEP 5: Save Results
-    # =========================================================================
-    
-    print("\n" + "=" * 60)
-    print("STEP 5: Saving results")
-    print("=" * 60)
-    
-    if all_results:
-        df = pd.DataFrame(all_results)
-        output_file = os.path.join(output_dir, "car_following_results.xlsx")
-        sanitize_workbook(output_file)
-        append_df_to_excel(df, output_file, "Results")
-        print(f"  Saved to: {output_file}")
-    
-    print("\nDONE!")
+
+    # === PARAMETERS ===
+    model = "Model1"
+    truck_count = 1
+    sigma, tau = 0.5, 1.00       # Automation level 0 (human driver)
+    accel = 1.0
+    speed_kmh = 60
+    slope = 0.0
+    road_type = "primary"
+    seed = 42
+
+    print("=" * 50)
+    print("RTSim — Car-Following Example")
+    print("=" * 50)
+
+    # Step 1: Generate network
+    print("\n[1] Generating network...")
+    net_gen = NetworkGenerator("example_output/networks")
+    networks = net_gen.generate_networks(xodr_file, "net", [slope])
+    _, net_path = networks[0]
+
+    # Step 2: Generate route file
+    print("[2] Generating route file...")
+    route_gen = RouteGenerator(route_base_dir, "example_output/routes")
+    routes = route_gen.generate_car_following_routes(
+        models=[model],
+        truck_counts=[truck_count],
+        sigma_tau_pairs=[(sigma, tau)],
+        accels=[accel],
+        speeds=[speed_kmh],
+        min_gaps=[0]
+    )
+
+    if not routes:
+        print("ERROR: No route files generated. Check that template exists at:")
+        print(f"  {route_base_dir}/{model}/{truck_count}truck/lower/grade2.rou.xml")
+        return
+
+    route_file = routes[0]
+    print(f"  Route: {os.path.basename(route_file)}")
+
+    # Step 3: Modify rolling resistance for road type
+    print(f"[3] Setting CRR for {road_type} road...")
+    crr_mod = CRRModifier(phem_dir, ".PHEMLight.veh")
+    crr_mod.modify_crr_for_routes([route_file], road_type)
+
+    # Step 4: Run simulation
+    print(f"[4] Running simulation (speed={speed_kmh} km/h, seed={seed})...")
+    cfg_path = SimulationBase.generate_config(sumo_cfg, route_file, net_path)
+
+    try:
+        results = run_car_following_simulation(cfg_path, route_file, seed=seed)
+    finally:
+        if os.path.exists(cfg_path):
+            os.remove(cfg_path)
+
+    # Step 5: Print results
+    print("\n" + "=" * 50)
+    print("Results:")
+    print("=" * 50)
+    for r in results:
+        fc = r['Fuel_L_per_100km']
+        if fc:
+            print(f"  {r['Vehicle']}: {fc:.2f} L/100km")
+        else:
+            print(f"  {r['Vehicle']}: N/A (no distance traveled)")
+
+    print(f"\nScenario: {model}, sigma={sigma}, tau={tau}, "
+          f"speed={speed_kmh} km/h, {road_type} road")
 
 
 if __name__ == "__main__":
