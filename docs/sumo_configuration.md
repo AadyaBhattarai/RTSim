@@ -99,8 +99,8 @@ sumo-gui -c grade0.sumocfg
 ```python
 import traci
 
-# Platooning (uses utils7)
-from utils7 import start_sumo
+# Platooning (uses plexe_utils)
+from src.platooning.plexe_utils import start_sumo
 start_sumo("grade0.sumocfg", False, False)
 
 # Car Following (direct, with seed for randomization)
