@@ -1,0 +1,7 @@
+automation_level,sigma,tau,description
+0,0.5,1.00,No automation (human driver)
+1,0.4,0.95,Driver assistance
+2,0.3,0.90,Partial automation
+3,0.2,0.80,Conditional automation
+4,0.0,0.70,High automation
+5,0.0,0.60,Full automation

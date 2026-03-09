@@ -1,0 +1,4 @@
+road_type,fr0,description
+primary,0.006923,Highways - smooth asphalt (PHEMlight default for heavy-duty)
+secondary,0.010000,Arterial roads - standard paved surface
+cross_country,0.025000,Gravel/unpaved roads
