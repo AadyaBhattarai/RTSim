@@ -1,0 +1,378 @@
+#!/usr/bin/env python3
+"""
+Generate PHEMlight .veh files for all platoon configurations.
+
+This script takes a base PHEMlight .veh template file and a drag coefficients
+CSV, and generates the complete folder structure of .veh files needed by RTSim.
+
+Each vehicle in a platoon experiences different aerodynamic drag depending on:
+  - Its position in the platoon (lead, middle, trailing)
+  - The gap between vehicles (5m, 10m, 15m, 20m)
+  - The vehicle model (different shapes → different CFD results)
+
+The drag coefficient (Cd) also has uncertainty, so we run simulations with
+both lower and upper bound estimates. This script generates .veh files for
+all combinations.
+
+Usage:
+    python tools/generate_phemlight_files.py \\
+        --base-veh data/base_phemlight/Model1_base.veh \\
+        --cd-csv data/drag_coefficients.csv \\
+        --vehicle-specs data/vehicle_specifications.csv \\
+        --output-dir output/PHEMlight \\
+        --model Model1
+
+    # Or generate for all models at once:
+    python tools/generate_phemlight_files.py \\
+        --base-veh-dir data/base_phemlight/ \\
+        --cd-csv data/drag_coefficients.csv \\
+        --vehicle-specs data/vehicle_specifications.csv \\
+        --output-dir output/PHEMlight
+
+Folder structure generated:
+    PHEMlight/
+    ├── Model1/
+    │   ├── Single/90/Lower/RT_II_D_EU0.veh    (solo vehicle, lower Cd)
+    │   ├── Single/90/Upper/RT_II_D_EU0.veh    (solo vehicle, upper Cd)
+    │   ├── 2truck/5/90/Lower/RT_II_D_EU0.veh  (lead, 5m gap, lower Cd)
+    │   ├── 2truck/5/90/Lower/RT_II_D_EU1.veh  (follower, 5m gap, lower Cd)
+    │   ├── 2truck/5/90/Upper/RT_II_D_EU0.veh  (lead, 5m gap, upper Cd)
+    │   └── ...
+"""
+
+import argparse
+import csv
+import os
+import re
+import sys
+from typing import Dict, List, Tuple
+
+
+def read_veh_file(path: str) -> str:
+    """Read a PHEMlight .veh file."""
+    with open(path, 'r') as f:
+        return f.read()
+
+
+def modify_cd_value(content: str, new_cd: float) -> str:
+    """
+    Replace the Cd value in a PHEMlight .veh file.
+    
+    The .veh file format has:
+        c Cd value [-]
+        0.486582          ← this line gets replaced
+    """
+    lines = content.splitlines()
+    new_lines = []
+    skip_next = False
+    
+    for line in lines:
+        if skip_next:
+            new_lines.append(str(round(new_cd, 6)))
+            skip_next = False
+            continue
+        if line.strip().lower() == 'c cd value [-]':
+            new_lines.append(line)
+            skip_next = True
+        else:
+            new_lines.append(line)
+    
+    return '\n'.join(new_lines)
+
+
+def modify_fr0_value(content: str, new_fr0: float) -> str:
+    """
+    Replace the Fr0 (rolling resistance) value in a PHEMlight .veh file.
+    
+    The .veh file format has:
+        c Fr0
+        0.006923          ← this line gets replaced
+    """
+    lines = content.splitlines()
+    new_lines = []
+    skip_next = False
+    
+    for line in lines:
+        if skip_next:
+            new_lines.append(str(new_fr0))
+            skip_next = False
+            continue
+        if line.strip().lower() == 'c fr0':
+            new_lines.append(line)
+            skip_next = True
+        else:
+            new_lines.append(line)
+    
+    return '\n'.join(new_lines)
+
+
+def modify_vehicle_property(content: str, property_comment: str, new_value) -> str:
+    """
+    Generic function to replace any value in a PHEMlight .veh file.
+    
+    Args:
+        content: File content
+        property_comment: The comment line preceding the value (e.g., 'c Vehicle mass [kg]')
+        new_value: New value to set
+    """
+    lines = content.splitlines()
+    new_lines = []
+    skip_next = False
+    
+    for line in lines:
+        if skip_next:
+            new_lines.append(str(new_value))
+            skip_next = False
+            continue
+        if line.strip().lower() == property_comment.lower():
+            new_lines.append(line)
+            skip_next = True
+        else:
+            new_lines.append(line)
+    
+    return '\n'.join(new_lines)
+
+
+def load_drag_coefficients(csv_path: str) -> Dict:
+    """
+    Load drag coefficients from CSV.
+    
+    Returns dict keyed by (model_id, platoon_size, gap, position) -> (cd_lower, cd_upper)
+    """
+    cd_data = {}
+    with open(csv_path, 'r') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            key = (
+                row['model_id'],
+                int(row['platoon_size']),
+                int(row['gap_m']),
+                int(row['position'])
+            )
+            cd_data[key] = (float(row['cd_lower']), float(row['cd_upper']))
+    return cd_data
+
+
+def load_vehicle_specs(csv_path: str) -> Dict:
+    """Load vehicle specifications from CSV."""
+    specs = {}
+    with open(csv_path, 'r') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            specs[row['model_id']] = row
+    return specs
+
+
+def generate_phemlight_tree(
+    base_veh_content: str,
+    model_id: str,
+    cd_data: Dict,
+    output_dir: str,
+    gaps: List[int] = None,
+    platoon_sizes: List[int] = None,
+    speed_label: str = "90"
+):
+    """
+    Generate the complete PHEMlight folder tree for one vehicle model.
+    
+    Args:
+        base_veh_content: Content of the base .veh template file
+        model_id: Model identifier (e.g., 'Model1')
+        cd_data: Drag coefficient data from load_drag_coefficients()
+        output_dir: Root output directory
+        gaps: List of inter-vehicle gaps in meters
+        platoon_sizes: List of platoon sizes to generate
+        speed_label: Speed label for folder naming (default '90')
+    """
+    if gaps is None:
+        gaps = [5, 10, 15, 20]
+    if platoon_sizes is None:
+        platoon_sizes = [1, 2, 3]
+    
+    files_created = 0
+    
+    for platoon_size in platoon_sizes:
+        if platoon_size == 1:
+            # Single vehicle (car-following mode)
+            key = (model_id, 1, 0, 1)
+            if key not in cd_data:
+                print(f"  Warning: No Cd data for {model_id} single vehicle, skipping")
+                continue
+            
+            cd_lower, cd_upper = cd_data[key]
+            
+            for bound, cd_value in [('Lower', cd_lower), ('Upper', cd_upper)]:
+                folder = os.path.join(output_dir, model_id, 'Single', speed_label, bound)
+                os.makedirs(folder, exist_ok=True)
+                
+                content = modify_cd_value(base_veh_content, cd_value)
+                out_path = os.path.join(folder, 'RT_II_D_EU0.veh')
+                with open(out_path, 'w') as f:
+                    f.write(content)
+                files_created += 1
+                
+                # Also create the .csv and _FC.csv companion files if they exist
+                # (these are emission curve files that don't change with Cd)
+        
+        else:
+            # Platoon (2truck, 3truck)
+            for gap in gaps:
+                for bound_name, bound_idx in [('Lower', 0), ('Upper', 1)]:
+                    folder = os.path.join(
+                        output_dir, model_id,
+                        f'{platoon_size}truck', str(gap), speed_label, bound_name
+                    )
+                    os.makedirs(folder, exist_ok=True)
+                    
+                    for position in range(1, platoon_size + 1):
+                        key = (model_id, platoon_size, gap, position)
+                        if key not in cd_data:
+                            print(f"  Warning: No Cd data for {key}, skipping")
+                            continue
+                        
+                        cd_lower, cd_upper = cd_data[key]
+                        cd_value = cd_lower if bound_idx == 0 else cd_upper
+                        
+                        content = modify_cd_value(base_veh_content, cd_value)
+                        
+                        # Position 1 → EU0, Position 2 → EU1, Position 3 → EU2
+                        filename = f'RT_II_D_EU{position - 1}.veh'
+                        out_path = os.path.join(folder, filename)
+                        with open(out_path, 'w') as f:
+                            f.write(content)
+                        files_created += 1
+    
+    return files_created
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Generate PHEMlight .veh files for RTSim platoon configurations',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Generate for a single model
+  %(prog)s --base-veh base_Model1.veh --cd-csv drag_coefficients.csv \\
+           --output-dir PHEMlight --model Model1
+
+  # Generate for all models (expects base_Model1.veh, base_Model2.veh, etc.)
+  %(prog)s --base-veh-dir base_phemlight/ --cd-csv drag_coefficients.csv \\
+           --output-dir PHEMlight
+        """
+    )
+    
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--base-veh', help='Path to a single base .veh template file')
+    group.add_argument('--base-veh-dir', help='Directory containing base .veh files (one per model)')
+    
+    parser.add_argument('--cd-csv', required=True,
+                        help='Path to drag_coefficients.csv')
+    parser.add_argument('--vehicle-specs', default=None,
+                        help='Path to vehicle_specifications.csv (optional, for mass/area overrides)')
+    parser.add_argument('--output-dir', default='PHEMlight',
+                        help='Output directory (default: PHEMlight)')
+    parser.add_argument('--model', default=None,
+                        help='Generate for specific model only (e.g., Model1)')
+    parser.add_argument('--gaps', nargs='+', type=int, default=[5, 10, 15, 20],
+                        help='Inter-vehicle gaps in meters (default: 5 10 15 20)')
+    parser.add_argument('--platoon-sizes', nargs='+', type=int, default=[1, 2, 3],
+                        help='Platoon sizes to generate (default: 1 2 3)')
+    parser.add_argument('--fr0', type=float, default=None,
+                        help='Override rolling resistance Fr0 value (e.g., 0.025 for cross-country)')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='Show what would be generated without creating files')
+    
+    args = parser.parse_args()
+    
+    # Load drag coefficients
+    print(f"Loading drag coefficients from: {args.cd_csv}")
+    cd_data = load_drag_coefficients(args.cd_csv)
+    print(f"  Loaded {len(cd_data)} Cd entries")
+    
+    # Determine which models to process
+    models_in_cd = sorted(set(k[0] for k in cd_data.keys()))
+    if args.model:
+        models_to_process = [args.model]
+    else:
+        models_to_process = models_in_cd
+    
+    print(f"Models to process: {models_to_process}")
+    print(f"Gaps: {args.gaps}")
+    print(f"Platoon sizes: {args.platoon_sizes}")
+    
+    if args.dry_run:
+        # Calculate how many files would be created
+        for model in models_to_process:
+            n_single = 2  # Lower + Upper
+            n_platoon = 0
+            for ps in args.platoon_sizes:
+                if ps > 1:
+                    n_platoon += len(args.gaps) * 2 * ps  # gaps × bounds × positions
+            print(f"  {model}: {n_single + n_platoon} .veh files")
+        print("\nDry run complete. No files created.")
+        return
+    
+    # Load vehicle specs if provided
+    vehicle_specs = None
+    if args.vehicle_specs:
+        vehicle_specs = load_vehicle_specs(args.vehicle_specs)
+    
+    # Process each model
+    total_files = 0
+    for model in models_to_process:
+        print(f"\nProcessing {model}...")
+        
+        # Find base .veh file
+        if args.base_veh:
+            base_path = args.base_veh
+        else:
+            # Look for model-specific base file in directory
+            candidates = [
+                os.path.join(args.base_veh_dir, f'{model}_base.veh'),
+                os.path.join(args.base_veh_dir, f'{model}.veh'),
+                os.path.join(args.base_veh_dir, f'base_{model}.veh'),
+            ]
+            base_path = None
+            for c in candidates:
+                if os.path.exists(c):
+                    base_path = c
+                    break
+            if not base_path:
+                print(f"  Error: No base .veh file found for {model} in {args.base_veh_dir}")
+                continue
+        
+        content = read_veh_file(base_path)
+        
+        # Apply vehicle spec overrides if provided
+        if vehicle_specs and model in vehicle_specs:
+            spec = vehicle_specs[model]
+            if 'mass_kg' in spec and spec['mass_kg']:
+                content = modify_vehicle_property(content, 'c Vehicle mass [kg]', spec['mass_kg'])
+            if 'frontal_area_m2' in spec and spec['frontal_area_m2']:
+                # Use the first value if multiple are listed
+                area = spec['frontal_area_m2'].split(',')[0].strip()
+                content = modify_vehicle_property(content, 'c Cross sectional area [m^2]', area)
+        
+        # Apply Fr0 override if specified
+        if args.fr0 is not None:
+            content = modify_fr0_value(content, args.fr0)
+        
+        # Generate the folder tree
+        n = generate_phemlight_tree(
+            base_veh_content=content,
+            model_id=model,
+            cd_data=cd_data,
+            output_dir=args.output_dir,
+            gaps=args.gaps,
+            platoon_sizes=args.platoon_sizes
+        )
+        
+        print(f"  Created {n} .veh files")
+        total_files += n
+    
+    print(f"\nDone! Total files created: {total_files}")
+    print(f"Output directory: {args.output_dir}")
+
+
+if __name__ == '__main__':
+    main()
