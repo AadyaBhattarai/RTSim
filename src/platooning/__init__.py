@@ -1,4 +1,4 @@
-"""Platooning simulation module using Plexe CACC."""
+"""Platooning simulation using Plexe ACC/CACC controllers."""
 
 from .platooning_sim import PlatooningSim, run_platooning_simulation
 
