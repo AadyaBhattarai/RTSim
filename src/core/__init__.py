@@ -1,6 +1,4 @@
-"""
-Core simulation modules for the vehicle platooning simulation framework.
-"""
+"""Core simulation modules shared by platooning and car-following."""
 
 from .simulation_base import SimulationBase
 from .network_generator import NetworkGenerator
