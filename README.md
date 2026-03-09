@@ -45,6 +45,8 @@ RTSim was validated using five U.S. Army vehicle models. Users can substitute th
 
 Multiple values for power and frontal area correspond to different loading configurations.
 
+> **Note:** This repository includes example data (vehicle specifications, PHEMlight base files, and CFD-derived drag coefficients) for **Model1 (M1078)** and **Model2 (M1083)** to demonstrate the simulator workflow. The remaining models used in the paper are not included due to data restrictions. Users can follow the same structure to add their own vehicle models — see [Using Your Own Vehicles](#using-your-own-vehicles).
+
 ## Automation Levels
 
 Automation is modeled through two Krauss model parameters that control driving behavior:
@@ -74,7 +76,7 @@ Rolling resistance is modeled by adjusting the Fr0 coefficient in the PHEMlight 
 
 Each vehicle in a platoon experiences different aerodynamic drag depending on its position and the inter-vehicle gap. We determined these values using CFD simulations in OpenFOAM with the k-ω SST turbulence model.
 
-The complete set of Cd values for all models, platoon sizes (2 and 3 vehicles), gaps (5, 10, 15, 20 m), and positions is provided in [`data/drag_coefficients.csv`](data/drag_coefficients.csv).
+Drag coefficient values for Model1 and Model2 are provided in [`data/drag_coefficients.csv`](data/drag_coefficients.csv) as working examples. Users should generate their own Cd values via CFD or wind tunnel experiments for other vehicle types.
 
 **Example** — Model1 (M1078) in a 3-vehicle platoon at 5m gap:
 
@@ -258,14 +260,15 @@ Key output columns:
 If you use RTSim in your research, please cite:
 
 ```bibtex
-@article{bhattarai2026rtsim,
-  author  = {Bhattarai, Aadya and Gard, Hadi and Shah, Ankit and Pohland, Timothy and Das, Tapas K.},
+@article{bhattarai2025rtsim,
+  author  = {Bhattarai, Aadya and Charkhgard, Hadi and Shah, Ankit and Pohland, Timothy and Das, Tapas K.},
   title   = {Developing a Road-Trip Simulator ({RTSim}) and a Fuel Consumption
              Prediction Model for Internal Combustion Engine Vehicles ({ICEVs})
              with Automation},
-  journal = {Transportation Research Part C: Emerging Technologies},
-  year    = {2026},
-  note    = {Under review}
+  journal = {SSRN Electronic Journal},
+  year    = {2025},
+  doi     = {10.2139/ssrn.6353058},
+  url     = {https://ssrn.com/abstract=6353058}
 }
 ```
 
