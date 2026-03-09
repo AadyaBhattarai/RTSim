@@ -44,8 +44,7 @@ cd ..
 ## Step 4: Install This Package
 
 ```bash
-git clone https://github.com/yourusername/vehicle-platooning-simulation.git
-cd vehicle-platooning-simulation
+git clone https://github.com/AadyaBhattarai/RTSim.git
 pip install -r requirements.txt
 ```
 
