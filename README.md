@@ -4,7 +4,7 @@ RTSim is an open-source road-trip simulator for estimating fuel consumption of I
 
 Unlike existing simulators that quantify platooning benefits only through automation, RTSim also derives the benefits of **aerodynamic drag reduction** using CFD-derived drag coefficients for each vehicle position in a platoon. This distinction matters: at higher speeds, drag reduction can contribute more to fuel savings than smoother speed control alone.
 
-![RTSim Framework](docs/framework.png)
+![RTSim Framework](docs/Figure_1.png)
 
 ## Key Features
 
