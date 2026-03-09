@@ -1,350 +1,268 @@
 #!/usr/bin/env python3
 """
-Production Script: Car Following Experiments
+Production Script: Car-Following Experiments
 
-Runs large-scale car following simulations with:
-- Multiple parameter combinations
-- Parallel processing
-- Progress tracking
-- Per-model confidence interval files
-- Excel output
+Runs large-scale car-following simulations with parallel processing.
+
+Car-following differs from platooning in several ways:
+    - Uses SUMO's built-in Krauss model (no Plexe)
+    - No drag reduction between vehicles
+    - Automation modeled via sigma/tau in the route file XML
+    - Randomization via SUMO's --seed (trial number)
+    - PHEMlight .veh files use '.PHEMLight.veh' suffix
 
 Usage:
-    python scripts/run_car_following.py --help
-    python scripts/run_car_following.py --dry-run
-    python scripts/run_car_following.py --trials 10 --output-dir results/car_following
+    python scripts/run_car_following_experiment.py \\
+        --xodr-file data/opendrive/experiment_e.xodr \\
+        --sumo-cfg data/sumo/configs/grade0.sumocfg \\
+        --route-base-dir data/sumo/routes/car_following/ \\
+        --phem-dir $SUMO_HOME/data/emissions \\
+        --trials 20 --workers 50 --output-dir results/car_following
 """
 
 import os
 import sys
 import re
 import argparse
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor
+from typing import List, Dict
 
 import numpy as np
 import pandas as pd
 from scipy import stats
 from tqdm import tqdm
 
-# Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-# Import from our modules
-from core import SimulationBase, NetworkGenerator, RouteGenerator
-from car_following import run_car_following_simulation
-from utils import CRRModifier, append_df_to_excel, sanitize_workbook
+from src.core import SimulationBase, NetworkGenerator, RouteGenerator
+from src.car_following import run_car_following_simulation
+from src.utils import CRRModifier, append_df_to_excel, sanitize_workbook
 
 
-def simulate_one(slope, net, road, rt, trial, base_cfg, base_phem_dir, crr_values):
+def simulate_one(slope, net, road, rt, trial, base_cfg):
     """
-    Worker function for a single car following trial.
-    
-    Note: trial is used as seed for SUMO's randomization.
+    Worker function for a single car-following trial.
+    Trial number is used as SUMO random seed.
     """
     cfg_path = None
     try:
-        # Modify CRR (car following uses .PHEMLight.veh suffix)
-        crr_modifier = CRRModifier(base_phem_dir, ".PHEMLight.veh")
-        crr_modifier.modify_crr_for_routes([rt], road, crr_values)
-        
-        # Generate unique config
-        cfg_path = SimulationBase.generate_config(base_cfg, rt, net, unique=True)
-        
-        # Run simulation (trial = seed)
+        cfg_path = SimulationBase.generate_config(base_cfg, rt, net)
         rows = run_car_following_simulation(cfg_path, rt, seed=trial)
-        
-        # Add metadata
         for r in rows:
-            r.update({
-                'Slope': slope,
-                'RoadType': road,
-                'Trial': trial
-            })
-        
+            r.update({'Slope': slope, 'RoadType': road})
         return rows
-        
     except Exception as e:
-        print(f"\n[ERROR] Trial {trial} failed: {e}")
+        print(f"\n  [ERROR] Trial {trial} failed: {e}")
         return []
-        
     finally:
         if cfg_path and os.path.exists(cfg_path):
             try:
                 os.remove(cfg_path)
-            except:
+            except Exception:
                 pass
 
 
-def get_model_from_route(route_file):
-    """Extract model name from route filename."""
-    basename = os.path.basename(route_file)
-    match = re.match(r'route_(\w+)_', basename)
-    return match.group(1) if match else "Unknown"
+def find_route_file(
+    all_routes: List[str], model: str, variant: str,
+    sigma: float, tau: float, accel: float, speed: int, min_gap: float
+) -> str:
+    """Find a matching route file from the generated list."""
+    for candidate in all_routes:
+        name = os.path.basename(candidate)
+        if (f"route_{model}_" in name and
+            f"_sigma_{sigma}" in name and
+            f"_tau_{tau}" in name and
+            f"_accel_{accel}" in name and
+            f"_maxSpeed_{speed}" in name and
+            f"_minGap_{min_gap}" in name and
+            f"_{variant}_" in name):
+            return candidate
+    return None
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run car following experiments",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  %(prog)s --dry-run                          # Show configuration
-  %(prog)s --trials 10 --output-dir results   # Run with 10 trials
-  %(prog)s --workers 50 --trials 10           # Use 50 parallel workers
-        """
+        description="Run car-following experiments with parallel processing",
     )
-    
-    # Required paths
-    parser.add_argument("--xodr-file", required=True,
-                        help="Path to your OpenDRIVE (.xodr) file")
-    parser.add_argument("--sumo-cfg", required=True,
-                        help="Path to your base SUMO config (.sumocfg) file")
-    parser.add_argument("--route-base-dir", required=True,
-                        help="Path to your car following route templates folder")
-    parser.add_argument("--phem-dir", required=True,
-                        help="Path to your emissions folder")
-    
-    # Optional settings
-    parser.add_argument("--output-dir", "-o", default="car_following_results",
-                        help="Output directory (default: car_following_results)")
-    parser.add_argument("--trials", "-t", type=int, default=10,
-                        help="Number of trials per scenario (default: 10)")
-    parser.add_argument("--workers", "-w", type=int, default=50,
-                        help="Number of parallel workers (default: 50)")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Show configuration without running")
-    
+    parser.add_argument("--xodr-file", required=True, help="OpenDRIVE (.xodr) file")
+    parser.add_argument("--sumo-cfg", required=True, help="Base SUMO config (.sumocfg)")
+    parser.add_argument("--route-base-dir", required=True, help="Car-following route templates dir")
+    parser.add_argument("--phem-dir", required=True, help="PHEMlight emissions directory")
+    parser.add_argument("--output-dir", "-o", default="car_following_results")
+    parser.add_argument("--trials", "-t", type=int, default=20)
+    parser.add_argument("--workers", "-w", type=int, default=50)
+    parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    
+
     # =========================================================================
-    # PARAMETERS - Modify these as needed
+    # PARAMETERS — Modify these for your experiment
     # =========================================================================
-    
-    models = ["Model4", "Model5"]
-    truck_counts = [1]  # Single truck for car following
+    models = ["Model1", "Model2"]
+    truck_counts = [1]
     sigma_tau_pairs = [
         (0.5, 1.00), (0.4, 0.95), (0.3, 0.90),
-        (0.2, 0.85), (0.0, 0.80), (0.0, 0.75)
+        (0.2, 0.85), (0.0, 0.80), (0.0, 0.75),
     ]
     accel_values = [0.2, 0.6, 1.0]
     speeds_km_h = [30, 60, 90, 100]
     min_gap_values = [5, 10, 15, 20]
     slope_values = [0.0, 0.06, 0.08, 0.16, 0.20]
-    road_types = ['cross_country']
-    
-    crr_values = {
-        'primary': 0.006923,
-        'secondary': 0.010,
-        'cross_country': 0.025
-    }
-    
-    # =========================================================================
-    # DRY RUN
-    # =========================================================================
-    
+    road_types = ['primary']
+    crr_values = {'primary': 0.006923, 'secondary': 0.010, 'cross_country': 0.025}
+
     if args.dry_run:
-        print("=" * 60)
-        print("DRY RUN - Configuration")
-        print("=" * 60)
-        print(f"\nPaths:")
-        print(f"  OpenDRIVE file:  {args.xodr_file}")
-        print(f"  SUMO config:     {args.sumo_cfg}")
-        print(f"  Route base dir:  {args.route_base_dir}")
-        print(f"  Emissions dir:   {args.phem_dir}")
-        print(f"  Output dir:      {args.output_dir}")
-        print(f"\nParameters:")
-        print(f"  Models:       {models}")
-        print(f"  Truck counts: {truck_counts}")
-        print(f"  Speeds:       {speeds_km_h}")
-        print(f"  Slopes:       {slope_values}")
-        print(f"  Road types:   {road_types}")
-        print(f"\nExecution:")
-        print(f"  Trials:       {args.trials}")
-        print(f"  Workers:      {args.workers}")
+        print("DRY RUN — Configuration:")
+        print(f"  Models:     {models}")
+        print(f"  Trucks:     {truck_counts}")
+        print(f"  Speeds:     {speeds_km_h}")
+        print(f"  Slopes:     {slope_values}")
+        print(f"  Roads:      {road_types}")
+        print(f"  Trials:     {args.trials}")
+        print(f"  Workers:    {args.workers}")
         return
-    
+
     # =========================================================================
     # SETUP
     # =========================================================================
-    
     os.makedirs(args.output_dir, exist_ok=True)
-    raw_file = os.path.join(args.output_dir, "all_scenarios_raw.xlsx")
-    
+    raw_file = os.path.join(args.output_dir, "car_following_raw.xlsx")
     sanitize_workbook(raw_file)
     for model in models:
-        sanitize_workbook(os.path.join(args.output_dir, f"confidence_intervals_{model}.xlsx"))
-    
-    print("=" * 60)
-    print("CAR FOLLOWING EXPERIMENT")
-    print("=" * 60)
-    
+        sanitize_workbook(os.path.join(args.output_dir, f"car_following_ci_{model}.xlsx"))
+
     # =========================================================================
-    # STEP 1: Generate Networks
+    # STEP 1: Generate networks
     # =========================================================================
-    
-    print("\n[1/4] Generating networks...")
+    print("[1/4] Generating networks...")
     net_gen = NetworkGenerator(os.path.join(args.output_dir, "networks"))
     networks = net_gen.generate_networks(args.xodr_file, "network", slope_values)
-    print(f"      Generated {len(networks)} network files")
-    
+
     # =========================================================================
-    # STEP 2: Generate Routes
+    # STEP 2: Generate route files
     # =========================================================================
-    
-    print("\n[2/4] Generating route files...")
+    print("[2/4] Generating route files...")
     route_gen = RouteGenerator(args.route_base_dir, os.path.join(args.output_dir, "routes"))
-    route_files = route_gen.generate_car_following_routes(
+    all_routes = route_gen.generate_car_following_routes(
         models, truck_counts, sigma_tau_pairs, accel_values, speeds_km_h, min_gap_values
     )
-    print(f"      Generated {len(route_files)} route files")
-    
+
     # =========================================================================
-    # STEP 3: Build Scenario List
+    # STEP 3: Build and run scenarios
     # =========================================================================
-    
-    print("\n[3/4] Running simulations...")
-    
-    # Build scenario parameter combinations
+    print("[3/4] Running simulations...")
+
     scenario_list = []
     for slope_val, net in networks:
         for road in road_types:
             for speed in speeds_km_h:
-                for sigma, tau in sigma_tau_pairs:
-                    for accel in accel_values:
-                        scenario_list.append({
-                            'slope': slope_val,
-                            'net': net,
-                            'road': road,
-                            'speed': speed,
-                            'sigma': sigma,
-                            'tau': tau,
-                            'accel': accel
-                        })
-    
-    # =========================================================================
-    # STEP 4: Run Simulations
-    # =========================================================================
-    
-    model_results = {m: [] for m in models}
-    
-    with tqdm(total=len(scenario_list), desc="Scenarios", unit="scenario") as pbar:
-        for scenario in scenario_list:
-            pbar.set_postfix({
-                'slope': scenario['slope'],
-                'speed': scenario['speed']
-            })
-            
-            # Find matching route files for this scenario
-            matching_routes = []
-            for rt in route_files:
-                name = os.path.basename(rt)
-                if (f"sigma_{scenario['sigma']}" in name and
-                    f"tau_{scenario['tau']}" in name and
-                    f"accel_{scenario['accel']}" in name and
-                    f"maxSpeed_{scenario['speed']}" in name):
-                    matching_routes.append(rt)
-            
-            if not matching_routes:
-                pbar.update(1)
-                continue
-            
-            # Modify CRR for all routes in this scenario
-            crr_modifier = CRRModifier(args.phem_dir, ".PHEMLight.veh")
-            crr_modifier.modify_crr_for_routes(matching_routes, scenario['road'], crr_values)
-            
-            # Build tasks
-            tasks = []
-            for rt in matching_routes:
+                for gap in min_gap_values:
+                    for sigma, tau in sigma_tau_pairs:
+                        for accel in accel_values:
+                            scenario_list.append({
+                                'slope': slope_val, 'net': net, 'road': road,
+                                'speed': speed, 'minGap': gap,
+                                'sigma': sigma, 'tau': tau, 'accel': accel,
+                            })
+
+    scenario_bar = tqdm(total=len(scenario_list), desc="Scenarios")
+
+    for scenario in scenario_list:
+        # --- Collect route files for this scenario ---
+        route_files = []
+        for variant in ['lower', 'upper']:
+            for model in models:
+                rt = find_route_file(
+                    all_routes, model, variant,
+                    scenario['sigma'], scenario['tau'],
+                    scenario['accel'], scenario['speed'],
+                    scenario['minGap']
+                )
+                if rt:
+                    route_files.append(rt)
+
+        if not route_files:
+            scenario_bar.update(1)
+            continue
+
+        # --- Modify CRR BEFORE launching parallel workers ---
+        # Car-following uses '.PHEMLight.veh' suffix (different from platooning)
+        crr_mod = CRRModifier(args.phem_dir, ".PHEMLight.veh")
+        crr_mod.modify_crr_for_routes(route_files, scenario['road'], crr_values)
+
+        # --- Run trials in parallel ---
+        model_results: Dict[str, list] = {m: [] for m in models}
+
+        for variant in ['lower', 'upper']:
+            jobs = []
+            for model in models:
+                rt = find_route_file(
+                    all_routes, model, variant,
+                    scenario['sigma'], scenario['tau'],
+                    scenario['accel'], scenario['speed'],
+                    scenario['minGap']
+                )
+                if not rt:
+                    continue
                 for trial in range(1, args.trials + 1):
-                    tasks.append((
-                        scenario['slope'], scenario['net'], scenario['road'],
-                        rt, trial, args.sumo_cfg, args.phem_dir, crr_values
-                    ))
-            
-            # Run in parallel
+                    jobs.append((model, rt, trial))
+
+            if not jobs:
+                continue
+
             with ProcessPoolExecutor(max_workers=args.workers) as executor:
                 futures = []
-                for task in tasks:
-                    rt = task[3]
-                    model = get_model_from_route(rt)
-                    fut = executor.submit(simulate_one, *task)
+                for model, rt, trial in jobs:
+                    fut = executor.submit(
+                        simulate_one, scenario['slope'], scenario['net'],
+                        scenario['road'], rt, trial, args.sumo_cfg
+                    )
                     futures.append((fut, model))
-                
+
                 for fut, model in futures:
                     rows = fut.result()
                     if rows:
                         for r in rows:
                             r['Model'] = model
                         model_results[model].extend(rows)
-                        
-                        # Save raw data
-                        df_raw = pd.DataFrame(rows)
-                        append_df_to_excel(df_raw, raw_file, "Raw")
-            
-            pbar.update(1)
-    
-    # =========================================================================
-    # STEP 5: Calculate Confidence Intervals (per model)
-    # =========================================================================
-    
-    print("\n[4/4] Calculating confidence intervals...")
-    
-    for model in models:
-        rows = model_results[model]
-        if len(rows) < 20:
-            print(f"      Warning: {model} has only {len(rows)} rows")
-            continue
-        
-        df = pd.DataFrame(rows)
-        ci_records = []
-        
-        for veh_id, grp in df.groupby('Vehicle'):
-            vals = grp['Fuel_L_per_100km'].dropna()
-            if len(vals) < 2:
+
+        # --- Compute confidence intervals per model ---
+        for model in models:
+            all_rows = model_results[model]
+            if len(all_rows) < 2:
                 continue
-                
-            mean = vals.mean()
-            std = vals.std(ddof=1)
-            n = len(vals)
-            sem = std / np.sqrt(n)
-            t_crit = stats.t.ppf(0.975, df=n-1)
-            
-            # Get scenario info from first row
-            first = grp.iloc[0]
-            ci_records.append({
-                'Model': model,
-                'Slope': first['Slope'],
-                'RoadType': first['RoadType'],
-                'Speed': first['Speed'],
-                'Sigma': first['Sigma'],
-                'Tau': first['Tau'],
-                'Accel': first['Accel'],
-                'Vehicle': veh_id,
-                'Mean': mean,
-                'CI_Lower': mean - t_crit * sem,
-                'CI_Upper': mean + t_crit * sem,
-                'Std': std,
-                'SEM': sem,
-                'N': n
-            })
-        
-        if ci_records:
-            ci_file = os.path.join(args.output_dir, f"confidence_intervals_{model}.xlsx")
-            df_ci = pd.DataFrame(ci_records)
-            append_df_to_excel(df_ci, ci_file, "CI")
-            print(f"      {model}: {len(ci_records)} CI records")
-    
-    # =========================================================================
-    # DONE
-    # =========================================================================
-    
-    print("\n" + "=" * 60)
-    print("DONE!")
-    print("=" * 60)
-    print(f"\nResults saved to: {args.output_dir}/")
-    print(f"  - all_scenarios_raw.xlsx")
-    for model in models:
-        print(f"  - confidence_intervals_{model}.xlsx")
+
+            df = pd.DataFrame(all_rows)
+            ci_records = []
+
+            for veh_id, grp in df.groupby('Vehicle'):
+                vals = grp['Fuel_L_per_100km'].dropna()
+                if len(vals) < 2:
+                    continue
+                mean = np.nanmean(vals)
+                std = np.nanstd(vals, ddof=1)
+                n = len(vals)
+                sem = std / np.sqrt(n)
+                t_crit = stats.t.ppf(0.975, df=n - 1)
+
+                ci_records.append({
+                    **scenario, 'Model': model, 'Vehicle': veh_id,
+                    'Mean': mean,
+                    'CI_Lower': mean - t_crit * sem,
+                    'CI_Upper': mean + t_crit * sem,
+                    'Std': std, 'SEM': sem, 'N': n,
+                })
+
+            if ci_records:
+                ci_file = os.path.join(args.output_dir, f"car_following_ci_{model}.xlsx")
+                append_df_to_excel(pd.DataFrame(ci_records), ci_file, "CI")
+
+            if all_rows:
+                append_df_to_excel(pd.DataFrame(all_rows), raw_file, "Raw")
+
+        scenario_bar.update(1)
+
+    scenario_bar.close()
+    print(f"\n[4/4] Done! Results saved to: {args.output_dir}/")
 
 
 if __name__ == "__main__":
